@@ -3,11 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Ignore everything INSIDE data
-/data/*
+# Ignore all files inside data recursively
+/data/**/*
 
-# But do not ignore the .gitkeep file
-!/data/.gitkeep
+# Do not ignore any .gitkeep files anywhere inside data
+!/data/**/.gitkeep
 
 # C extensions
 *.so
