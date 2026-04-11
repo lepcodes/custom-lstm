@@ -2,6 +2,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.vscode/
+*.db
+mlruns/
+
+# ONNX
+*.onnx
 
 # 1. Ignore everything inside data recursively
 /data/**/*
@@ -65,3 +71,7 @@ coverage.xml
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+
+# Skills
+.agents/
+skills-lock.json
