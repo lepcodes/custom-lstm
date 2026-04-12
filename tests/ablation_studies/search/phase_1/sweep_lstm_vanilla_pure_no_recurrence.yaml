@@ -1,0 +1,16 @@
+# ─── Sweep: LSTM Vanilla Pure No Recurrence ────────────────────────────────
+# Usage: python sweep.py --config configs/sweep_lstm_vanilla_pure_no_recurrence.yaml
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+architecture: "lstm_vanilla_pure_no_recurrence"
+data_mode: "pure"
+
+# Fixed hyperparameters
+output_size: 1
+epochs: 200
+patience: 30
+
+# sever_recurrence=true is auto-injected from architecture name
+grid:
+  hidden_size: [16, 32, 64]           
+  lr: [0.01, 0.001, 0.0001]

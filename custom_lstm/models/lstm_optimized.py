@@ -65,4 +65,6 @@ class LSTMVanillaOptimized(nn.Module):
         output = self.dropout(h_t)
         output = self.linear(output)
         return output
-        return output
+
+    def reset_state(self):
+        pass

@@ -1,0 +1,19 @@
+# ─── Ablation Study: LSTM Vanilla Windowed No Recurrence ────────────────────
+# Usage: python train.py --config configs/lstm_vanilla_windowed_no_recurrence.yaml
+
+experiment_name: "Thesis_Ablation"
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\lbl_tcp_3.csv"
+
+architecture: "lstm_vanilla_windowed_no_recurrence"
+data_mode: "win"
+
+model_kwargs:
+  input_size: 10
+  hidden_size: 64
+  output_size: 1
+  sever_recurrence: true
+
+window_size: 10
+epochs: 100
+lr: 0.001
+bptt_steps: 50

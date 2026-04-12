@@ -1,0 +1,17 @@
+# ─── Ablation Study: Simple MLP Baseline ───────────────────────────────────
+# Usage: python train.py --config configs/simple_mlp.yaml
+
+experiment_name: "Thesis_Ablation"
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\lbl_tcp_3.csv"
+
+architecture: "simple_mlp"
+data_mode: "win"
+
+model_kwargs:
+  input_size: 10
+  output_size: 1
+  hidden_layers: [124, 124]
+
+window_size: 10
+epochs: 1000
+lr: 0.001

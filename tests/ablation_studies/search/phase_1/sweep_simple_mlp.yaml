@@ -1,0 +1,21 @@
+# ─── Sweep: Simple MLP ─────────────────────────────────────────────────────
+# Usage: python sweep.py --config configs/sweep_simple_mlp.yaml
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+architecture: "simple_mlp"
+data_mode: "win"
+
+# Fixed hyperparameters
+output_size: 1
+epochs: 200
+patience: 30
+
+# NOTE: input_size is automatically set to match window_size
+grid:
+  hidden_layers:
+    - [16, 16]
+    - [32, 32]
+    - [64, 64]
+    - [124, 124]
+  window_size: [10, 20, 30]
+  lr: [0.01, 0.001, 0.0001]

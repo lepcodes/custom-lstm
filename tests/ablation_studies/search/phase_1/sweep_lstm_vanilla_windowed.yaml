@@ -1,0 +1,18 @@
+# ─── Sweep: LSTM Vanilla Windowed ───────────────────────────────────────────
+# Usage: python sweep.py --config configs/sweep_lstm_vanilla_windowed.yaml
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+architecture: "lstm_vanilla_windowed"
+data_mode: "win"
+
+# Fixed hyperparameters
+output_size: 1
+epochs: 200
+patience: 30
+
+# NOTE: input_size is automatically set to match window_size
+grid:
+  hidden_size: [16, 32, 64]
+  window_size: [10, 20, 40]
+  bptt_steps: [25, 50, 100]
+  lr: [0.001]
