@@ -56,8 +56,8 @@ from typing import Any, Dict, Optional
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
-
 # ─── Single Source of Truth: Architecture Names ───────────────────────────────
+
 
 class ArchitectureType(str, Enum):
     LSTM_VANILLA_PURE = "lstm_vanilla_pure"
@@ -71,6 +71,7 @@ class ArchitectureType(str, Enum):
 
 class LossType(str, Enum):
     """Which loss function to use."""
+
     MSE = "mse"
     EWACF_BROADCAST = "ewacf_broadcast"
     EWACF_INPUT_GATE = "ewacf_input_gate"
@@ -78,6 +79,7 @@ class LossType(str, Enum):
 
 class TrainerStrategyType(str, Enum):
     """Available training strategies."""
+
     TBPTT = "tbptt"
     STANDARD_BP = "standard_bp"
     EWACF_TBPTT = "ewacf_tbptt"
@@ -85,46 +87,41 @@ class TrainerStrategyType(str, Enum):
 
 class DataMode(str, Enum):
     """Which tensor layout the architecture expects."""
+
     PURE = "pure"
     WINDOWED = "win"
 
 
 # ─── Architecture → Strategy Compatibility Rules ─────────────────────────────
-# Each architecture maps to a set of *allowed* strategies and a *default*.
+# Each architecture maps to a set of *allowed* strategies.
 
 ARCHITECTURE_STRATEGY_RULES: Dict[ArchitectureType, Dict] = {
     ArchitectureType.LSTM_VANILLA_PURE: {
         "allowed": {TrainerStrategyType.TBPTT, TrainerStrategyType.EWACF_TBPTT},
-        "default": TrainerStrategyType.TBPTT,
     },
     ArchitectureType.LSTM_VANILLA_WINDOWED: {
         "allowed": {TrainerStrategyType.TBPTT, TrainerStrategyType.EWACF_TBPTT},
-        "default": TrainerStrategyType.TBPTT,
     },
     ArchitectureType.LSTM_CUSTOM_PURE: {
         "allowed": {TrainerStrategyType.TBPTT, TrainerStrategyType.EWACF_TBPTT},
-        "default": TrainerStrategyType.EWACF_TBPTT,
     },
     ArchitectureType.LSTM_CUSTOM_WINDOWED: {
         "allowed": {TrainerStrategyType.TBPTT, TrainerStrategyType.EWACF_TBPTT},
-        "default": TrainerStrategyType.EWACF_TBPTT,
     },
     ArchitectureType.SIMPLE_MLP: {
         "allowed": {TrainerStrategyType.STANDARD_BP},
-        "default": TrainerStrategyType.STANDARD_BP,
     },
     ArchitectureType.LSTM_VANILLA_PURE_NO_RECURRENCE: {
         "allowed": {TrainerStrategyType.STANDARD_BP, TrainerStrategyType.TBPTT},
-        "default": TrainerStrategyType.STANDARD_BP,
     },
     ArchitectureType.LSTM_VANILLA_WINDOWED_NO_RECURRENCE: {
         "allowed": {TrainerStrategyType.STANDARD_BP, TrainerStrategyType.TBPTT},
-        "default": TrainerStrategyType.STANDARD_BP,
     },
 }
 
 
 # ─── Experiment Configuration ─────────────────────────────────────────────────
+
 
 class ExperimentConfig(BaseModel):
     """
@@ -132,6 +129,7 @@ class ExperimentConfig(BaseModel):
     All auto-resolution happens in a single resolve_pipeline() validator.
     Call describe_pipeline() after creation to see the fully resolved state.
     """
+
     experiment_name: str = Field(default="Thesis_Ablation", description="MLflow experiment name")
     run_name: Optional[str] = Field(default=None, description="MLflow run name, auto-generated if None")
 
@@ -168,37 +166,56 @@ class ExperimentConfig(BaseModel):
         rules = ARCHITECTURE_STRATEGY_RULES[self.architecture]
 
         # — Step 1: Resolve trainer_strategy —
-        if self.trainer_strategy is not None:
-            # User explicitly set it → validate compatibility
-            if self.trainer_strategy not in rules["allowed"]:
-                allowed_list = [str(s) for s in rules["allowed"]]
-                raise ValueError(
-                    f"Strategy '{self.trainer_strategy}' is incompatible with "
-                    f"architecture '{self.architecture}'. "
-                    f"Allowed: {allowed_list}"
-                )
-        elif self.loss_type != LossType.MSE:
-            # EW-ACF loss requires the specialized trainer
-            resolved = TrainerStrategyType.EWACF_TBPTT
-            if resolved not in rules["allowed"]:
-                allowed_list = [str(s) for s in rules["allowed"]]
+        allowed_strategies = rules["allowed"]
+
+        # Branch A: EW-ACF losses strictly require the EWACF_TBPTT strategy
+        if self.loss_type != LossType.MSE:
+            required_strategy = TrainerStrategyType.EWACF_TBPTT
+
+            if self.trainer_strategy is not None and self.trainer_strategy != required_strategy:
+                raise ValueError(f"loss_type='{self.loss_type}' strictly requires '{required_strategy}', but '{self.trainer_strategy}' was explicitly requested.")
+
+            if required_strategy not in allowed_strategies:
+                allowed_list = [str(s) for s in allowed_strategies]
                 raise ValueError(
                     f"loss_type='{self.loss_type}' requires strategy "
-                    f"'{resolved}', but architecture "
+                    f"'{required_strategy}', but architecture "
                     f"'{self.architecture}' doesn't allow it. "
                     f"Allowed: {allowed_list}"
                 )
-            self.trainer_strategy = resolved
+
+            self.trainer_strategy = required_strategy
+
+        # Branch B: Pure MSE loss uses standard strategies
         else:
-            # Pure MSE → use the architecture's default
-            self.trainer_strategy = rules["default"]
+            if self.trainer_strategy == TrainerStrategyType.EWACF_TBPTT:
+                raise ValueError(
+                    f"Strategy '{TrainerStrategyType.EWACF_TBPTT}' cannot be used with loss_type='{LossType.MSE}'. "
+                    f"Please use '{TrainerStrategyType.TBPTT}' or '{TrainerStrategyType.STANDARD_BP}'."
+                )
+
+            # Auto-resolve a valid standard strategy if not explicitly set
+            if self.trainer_strategy is None:
+                if TrainerStrategyType.TBPTT in allowed_strategies:
+                    self.trainer_strategy = TrainerStrategyType.TBPTT
+                elif TrainerStrategyType.STANDARD_BP in allowed_strategies:
+                    self.trainer_strategy = TrainerStrategyType.STANDARD_BP
+                else:
+                    raise ValueError(f"No valid MSE training strategy available for {self.architecture}")
+
+            # Validate explicit choice against allowed rules
+            if self.trainer_strategy not in allowed_strategies:
+                allowed_list = [str(s) for s in allowed_strategies]
+                raise ValueError(f"Strategy '{self.trainer_strategy}' is incompatible with architecture '{self.architecture}'. Allowed: {allowed_list}")
 
         # — Step 2: Resolve names —
         dataset_stem = Path(self.data_path).stem
         if self.dataset_name is None:
             self.dataset_name = dataset_stem
-        if self.experiment_name == "Thesis_Ablation":
-            self.experiment_name = f"Phase1_{dataset_stem}"
+
+        # Ensure experiment name includes the dataset to differentiate runs
+        if self.dataset_name not in self.experiment_name:
+            self.experiment_name = f"{self.experiment_name}_{self.dataset_name}"
 
         return self
 
@@ -209,10 +226,7 @@ class ExperimentConfig(BaseModel):
         """
         loss_detail = str(self.loss_type)
         if self.loss_type != LossType.MSE:
-            loss_detail += (
-                f" (α={self.ewacf_alpha}, λ={self.ewacf_lambda}, "
-                f"lag={self.ewacf_lag}, θ={self.ewacf_threshold})"
-            )
+            loss_detail += f" (α={self.ewacf_alpha}, λ={self.ewacf_lambda}, lag={self.ewacf_lag}, θ={self.ewacf_threshold})"
 
         lag_note = ""
         if self.loss_type != LossType.MSE and self.data_mode == DataMode.WINDOWED:
