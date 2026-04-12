@@ -11,7 +11,7 @@ from tests.ablation_studies.callbacks import MLflowCallback
 from tests.ablation_studies.config import ExperimentConfig
 from tests.ablation_studies.data_loader import load_data
 from tests.ablation_studies.factory import build_trainer
-import tests.ablation_studies.registry  # noqa: F401 — triggers model registration
+import tests.ablation_studies.model_setup  # noqa: F401 — triggers model registration
 
 
 def seed_everything(seed: int):
