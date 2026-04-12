@@ -1,7 +1,8 @@
-# ─── Sweep W-0: Custom LSTM Windowed + MSE Only (Control) ──────────────────
-# Usage: python sweep.py --config search/phase_2/sweep_W0_windowed_mse.yaml
+# ─── Sweep W-0: Custom LSTM Windowed + MSE (Control) ───────────────────────
+# Wide Search: Comparing Windowed capacity vs Pure baseline.
 
 data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+experiment_name: "Phase 2"
 architecture: "lstm_custom_windowed"
 data_mode: "win"
 loss_type: "mse"
@@ -13,7 +14,7 @@ patience: 30
 
 # Search grid
 grid:
-  hidden_size: [32]
-  window_size: [10]
-  bptt_steps: [50]
-  lr: [0.001]
+  hidden_size: [32, 64, 128]
+  lr: [0.001, 0.0001]
+  bptt_steps: [50, 100]
+  window_size: [5, 10, 20]

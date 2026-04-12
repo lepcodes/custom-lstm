@@ -1,7 +1,8 @@
 # ─── Sweep P-0: Custom LSTM Pure + MSE Only (Control) ──────────────────────
-# Usage: python sweep.py --config search/phase_2/sweep_P0_pure_mse.yaml
+# Wide Search: Evaluating core capacity and learning dynamics.
 
 data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+experiment_name: "Phase 2"
 architecture: "lstm_custom_pure"
 data_mode: "pure"
 loss_type: "mse"
@@ -13,6 +14,6 @@ patience: 30
 
 # Search grid
 grid:
-  hidden_size: [32]
-  bptt_steps: [50]
-  lr: [0.001]
+  hidden_size: [32, 64, 128]
+  lr: [0.001, 0.0001]
+  bptt_steps: [50, 100]

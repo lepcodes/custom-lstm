@@ -1,16 +1,11 @@
-# ─── Sweep P-2: Custom LSTM Pure + EW-ACF Input-Gate Weighted ──────────────
-# Usage: python sweep.py --config search/phase_2/sweep_P2_pure_ewacf_input_gate.yaml
+# ─── Sweep P-2: Custom LSTM Pure + EW-ACF Input Gate ───────────────────────
+# Wide Search: Evaluating core capacity and Input Gate regularization.
 
 data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+experiment_name: "Phase 2"
 architecture: "lstm_custom_pure"
 data_mode: "pure"
 loss_type: "ewacf_input_gate"
-
-# EW-ACF hyperparameters
-ewacf_alpha: 0.5
-ewacf_lambda: 0.5
-ewacf_lag: 1
-ewacf_threshold: 0.1
 
 # Fixed hyperparameters
 output_size: 1
@@ -19,6 +14,12 @@ patience: 30
 
 # Search grid
 grid:
-  hidden_size: [32]
-  bptt_steps: [50]
-  lr: [0.001]
+  hidden_size: [32, 64, 128]
+  lr: [0.001, 0.0001]
+  bptt_steps: [50, 100]
+  
+  # EW-ACF Wide Search
+  ewacf_alpha: [0.1, 0.5, 1.0]
+  ewacf_lag: [1, 5, 10]
+  ewacf_lambda: [0.5, 0.9]
+  ewacf_threshold: [0.01, 0.1]

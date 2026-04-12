@@ -1,17 +1,11 @@
-# ─── Sweep W-2: Custom LSTM Windowed + EW-ACF Input-Gate Weighted (Lag ≥ W)
-# Usage: python sweep.py --config search/phase_2/sweep_W2_windowed_ewacf_input_gate.yaml
+# ─── Sweep W-2: Custom LSTM Windowed + EW-ACF Input Gate ───────────────────
+# Wide Search: Finalizing the 6-model ablation matrix.
 
 data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+experiment_name: "Phase 2"
 architecture: "lstm_custom_windowed"
 data_mode: "win"
 loss_type: "ewacf_input_gate"
-
-# EW-ACF hyperparameters
-# NOTE: lag is enforced >= window_size at runtime via enforce_min_lag()
-ewacf_alpha: 0.5
-ewacf_lambda: 0.5
-ewacf_lag: 10
-ewacf_threshold: 0.1
 
 # Fixed hyperparameters
 output_size: 1
@@ -20,7 +14,13 @@ patience: 30
 
 # Search grid
 grid:
-  hidden_size: [32]
-  window_size: [10]
-  bptt_steps: [50]
-  lr: [0.001]
+  hidden_size: [32, 64, 128]
+  lr: [0.001, 0.0001]
+  bptt_steps: [50, 100]
+  window_size: [5, 10, 20]
+  
+  # EW-ACF Wide Search
+  ewacf_alpha: [0.1, 0.5, 1.0]
+  ewacf_lag: [1, 5, 10]
+  ewacf_lambda: [0.5, 0.9]
+  ewacf_threshold: [0.01, 0.1]

@@ -96,7 +96,16 @@ def main():
     print(f"  Runs:  {len(combinations)}  |  Patience: {patience}")
     print(f"{'=' * 70}")
 
-    mlflow.set_experiment(f"Phase1_{dataset_stem}")
+    # ── Resolve Experiment Name ─────────────────────────────────────────────
+    # Build a dummy config with default values just to resolve the experiment name
+    # which is consistent for the whole sweep.
+    dummy_config = ExperimentConfig(
+        data_path=sweep_cfg["data_path"],
+        architecture=arch,
+        data_mode=sweep_cfg["data_mode"],
+        experiment_name=sweep_cfg.get("experiment_name", "Thesis_Ablation")
+    )
+    mlflow.set_experiment(dummy_config.experiment_name)
 
     best_val_loss = float("inf")
     best_combo = None
