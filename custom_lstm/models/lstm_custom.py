@@ -13,12 +13,12 @@ class LSTMCellCustom(nn.Module):
     Custom LSTM cell implementation on PyTorch.
     """
 
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size, hidden_size, forget_gate_layers=[16, 16]):
         super(LSTMCellCustom, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
 
-        self.forget_mlp = MLP(input_size + hidden_size, hidden_size, [16, 16])
+        self.forget_mlp = MLP(input_size + hidden_size, hidden_size, forget_gate_layers)
 
         self.W_hi = nn.Parameter(torch.empty(hidden_size, hidden_size))
         self.W_xi = nn.Parameter(torch.empty(input_size, hidden_size))
@@ -59,11 +59,11 @@ class LSTMCustom(AblationModel):
     Vanilla LSTM Network implementation on PyTorch.
     """
 
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size, forget_gate_layers=[16, 16]):
         super(LSTMCustom, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.lstm = LSTMCellCustom(input_size, hidden_size)
+        self.lstm = LSTMCellCustom(input_size, hidden_size, forget_gate_layers=forget_gate_layers)
         self.linear = nn.Linear(hidden_size, output_size)
 
     def forward(self, sequence):

@@ -11,11 +11,11 @@ class LSTMCustomStateful(AblationModel):
     Custom LSTM cell implementation on PyTorch with statefulness.
     """
 
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size, forget_gate_layers=[]):
         super(LSTMCustomStateful, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.lstm = LSTMCellCustom(input_size, hidden_size)
+        self.lstm = LSTMCellCustom(input_size, hidden_size, forget_gate_layers=forget_gate_layers)
         self.linear = nn.Linear(hidden_size, output_size)
         self.h_t = None
         self.c_t = None
