@@ -31,7 +31,13 @@ def run_experiment(config: ExperimentConfig, patience: int = None) -> dict:
     run_name = config.run_name or f"{config.architecture}_{config.dataset_name}"
 
     with mlflow.start_run(run_name=run_name) as run:
-        mlflow.log_params(config.model_dump())
+        # Flatten the config for MLflow so we can plot nested params (like hidden_size)
+        params = config.model_dump()
+        model_params = params.pop("model_kwargs", {})
+        for k, v in model_params.items():
+            params[f"model_{k}"] = v
+
+        mlflow.log_params(params)
 
         print(f"Loading data from {config.data_path}...")
         data_dict, scaler = load_data(config.data_path, window_size=config.window_size)
