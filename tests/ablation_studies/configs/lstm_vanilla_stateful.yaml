@@ -9,7 +9,7 @@ data_mode: "pure"
 
 model_kwargs:
   input_size: 1
-  hidden_size: 16
+  hidden_size: 32
   output_size: 1
 
 epochs: 100

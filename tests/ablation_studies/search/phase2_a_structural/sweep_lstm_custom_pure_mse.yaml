@@ -1,0 +1,20 @@
+# ─── Phase 2a: Structural Optimization (Pure MSE Control) ──────────────────
+# Goal: Find the best hidden_size and learning rate for the dataset.
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\etth1.csv"
+experiment_name: "Phase 2a - Structural"
+architecture: "lstm_custom_pure"
+data_mode: "pure"
+loss_type: "mse"
+
+# Fixed hyperparameters
+output_size: 1
+epochs: 200
+patience: 30
+
+# Structural Search Grid (24 runs)
+grid:
+  hidden_size: [32, 64, 128]
+  lr: [0.01, .001, 0.0001]
+  bptt_steps: [20, 50, 100]
+  forget_gate_layers: [[]]

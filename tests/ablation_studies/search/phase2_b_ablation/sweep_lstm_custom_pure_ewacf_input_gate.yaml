@@ -1,0 +1,25 @@
+# ─── Phase 2b: Pure + EW-ACF Input Gate Ablation ───────────────────────────
+# Goal: Find optimal Input Gate regularization for fixed architecture.
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+experiment_name: "Phase 2b - Ablation"
+architecture: "lstm_custom_pure"
+data_mode: "pure"
+loss_type: "ewacf_input_gate"
+
+# Fixed hyperparameters (Determined from Phase 2a)
+output_size: 1
+epochs: 200
+patience: 30
+
+# Ablation Grid (18 runs)
+grid:
+  hidden_size: [64]  # PLACEHOLDER
+  lr: [0.001]        # PLACEHOLDER
+  bptt_steps: [50]   # PLACEHOLDER
+  forget_gate_layers: [[16, 16], [32], [64, 64]]
+  
+  # EW-ACF Variables Sweep
+  ewacf_alpha: [0.1, 0.5, 1.0]
+  ewacf_lag: [1, 5, 10]
+  ewacf_threshold: [0.01, 0.1]
