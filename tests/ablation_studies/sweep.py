@@ -14,7 +14,7 @@ from tests.ablation_studies.train import run_experiment, seed_everything
 from tests.ablation_studies.config import ExperimentConfig
 
 # Keys from the grid that map to model_kwargs (everything else maps to ExperimentConfig)
-MODEL_KWARGS_KEYS = {"hidden_size", "hidden_layers"}
+MODEL_KWARGS_KEYS = {"hidden_size", "hidden_layers", "forget_gate_layers"}
 
 
 def build_experiment_config(sweep_cfg: dict, grid_combo: dict) -> ExperimentConfig:
@@ -31,12 +31,14 @@ def build_experiment_config(sweep_cfg: dict, grid_combo: dict) -> ExperimentConf
     for key in MODEL_KWARGS_KEYS:
         if key in grid_combo:
             model_kwargs[key] = grid_combo[key]
+        elif key in sweep_cfg:
+            model_kwargs[key] = sweep_cfg[key]
 
     if "no_recurrence" in arch:
         model_kwargs["sever_recurrence"] = True
 
     # ── Build descriptive run name ─────────────────────────────────────────
-    tag_map = {"hidden_size": "hs", "hidden_layers": "hl", "window_size": "ws", "bptt_steps": "bptt", "lr": "lr"}
+    tag_map = {"hidden_size": "hs", "hidden_layers": "hl", "forget_gate_layers": "fgl", "window_size": "ws", "bptt_steps": "bptt", "lr": "lr"}
     parts = [arch]
     for k, v in grid_combo.items():
         tag = tag_map.get(k, k)
