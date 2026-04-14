@@ -69,6 +69,7 @@ class EWACFLoss(nn.Module):
         self.routing_strategy = routing_strategy
         self.register_buffer("mean", torch.zeros(1))
         self.register_buffer("variance", torch.zeros(1) + self.epsilon)
+        self.register_buffer("variance_lag", torch.zeros(1) + self.epsilon)
         self.register_buffer("covariance", torch.zeros(1))
         self.register_buffer("input_lag", torch.zeros(0))
 
@@ -87,35 +88,53 @@ class EWACFLoss(nn.Module):
     def forward(self, predictions, targets, sequence, forget_gates, input_gates=None):
         if self.input_lag.numel() == 0:
             full_sequence = sequence
-            initial_padding = [torch.zeros(sequence.shape[0], sequence.shape[2], device=sequence.device)] * self.lag
+            # No padding - we skip the first 'lag' steps for the very first batch
+            start_idx = self.lag
         else:
             full_sequence = torch.cat((self.input_lag, sequence), dim=1)
-            initial_padding = []
+            start_idx = self.lag
 
         self.input_lag = full_sequence[:, -self.lag :, :].detach()
 
-        autocorrelation = [] + initial_padding
-        for t in range(self.lag, full_sequence.shape[1]):
+        autocorrelation = []
+        for t in range(start_idx, full_sequence.shape[1]):
             x_t = full_sequence[:, t, :]
             x_t_lag = full_sequence[:, t - self.lag, :]
 
             self.mean = torch.mul(self.lambda_, self.mean) + torch.mul(1 - self.lambda_, x_t)
             self.variance = torch.mul(self.lambda_, self.variance) + torch.mul(1 - self.lambda_, (x_t - self.mean) ** 2)
+            self.variance_lag = torch.mul(self.lambda_, self.variance_lag) + torch.mul(1 - self.lambda_, (x_t_lag - self.mean) ** 2)
             self.covariance = torch.mul(self.lambda_, self.covariance) + torch.mul(1 - self.lambda_, (x_t - self.mean) * (x_t_lag - self.mean))
-            autocorrelation.append(self.covariance / torch.sqrt(self.variance * self.variance + self.epsilon))
 
-        irrelevance = 1 - torch.abs(torch.stack(autocorrelation, dim=1))
+            # Robust Dual-Variance Normalization
+            acf_t = self.covariance / torch.sqrt(self.variance * self.variance_lag + self.epsilon)
+            autocorrelation.append(acf_t)
+
+        if not autocorrelation:
+            # Fallback if sequence is shorter than lag
+            return self.mse_loss(predictions, targets), self.mse_loss(predictions, targets), torch.zeros(1, device=predictions.device)
+
+        # Align lengths: only penalize steps where we have autocorrelation
+        autocorrelation = torch.stack(autocorrelation, dim=1)
+        num_acf_steps = autocorrelation.shape[1]
+
+        # Slice forget gates and input gates from the END to match autocorrelation
+        # (Since autocorrelation starts at index 'lag', we take the last N steps)
+        active_forget_gates = forget_gates[:, -num_acf_steps:, :]
+
+        irrelevance = 1 - torch.abs(autocorrelation)
         irrelevance = torch.mean(irrelevance, dim=2, keepdim=True)
         active_irrelevance = torch.clamp(irrelevance - self.threshold, min=0.0)
 
-        penalty_tensor = torch.mul(active_irrelevance, forget_gates)
+        penalty_tensor = torch.mul(active_irrelevance, active_forget_gates)
 
         if self.routing_strategy == "input_gate":
             if input_gates is None:
                 raise ValueError(
                     "routing_strategy='input_gate' requires input_gates tensor, got None."
                 )
-            penalty_tensor = penalty_tensor * input_gates.detach()
+            active_input_gates = input_gates[:, -num_acf_steps:, :].detach()
+            penalty_tensor = penalty_tensor * active_input_gates
 
         penalty_val = torch.mean(penalty_tensor)
         mse_val = self.mse_loss(predictions, targets)
@@ -125,5 +144,6 @@ class EWACFLoss(nn.Module):
     def reset_state(self):
         self.mean.zero_()
         self.variance.fill_(self.epsilon)
+        self.variance_lag.fill_(self.epsilon)
         self.covariance.zero_()
         self.input_lag = torch.tensor([], device=self.mean.device)

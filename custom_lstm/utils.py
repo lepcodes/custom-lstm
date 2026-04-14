@@ -39,35 +39,37 @@ def transfer_weights(vanilla_lstm: torch.nn.Module, custom_lstm: torch.nn.Module
 def ew_acf(time_series, lag, lambda_=0.5, last_only=False):
     """
     Calculates the exponential weighted autocorrelation function of a time series.
-    Args:
-        time_series (array-like): The time series to calculate the autocorrelation function of.
-        lag (int): The lag to calculate the autocorrelation at.
-        lambda_ (float): The exponential decay parameter.
-    Returns:
-        float: The autocorrelation value with specified lag.
+    Uses dual-variance tracking for robustness against regime shifts.
     """
     if len(time_series) <= lag:
         return np.nan
 
-    mean = 0.5
-    variance = 0
-    variance_lag = 0
+    epsilon = 1e-8
+    mean = 0.0
+    variance = epsilon
+    variance_lag = epsilon
     autocovariance = 0
 
     if not last_only:
-        autocorrerlation_list = []
+        autocorrelation_list = []
 
     for i in range(lag, len(time_series)):
-        mean = lambda_ * mean + (1 - lambda_) * time_series[i]
-        autocovariance = lambda_ * autocovariance + (1 - lambda_) * (time_series[i] - mean) * (time_series[i - lag] - mean)
-        variance = lambda_ * variance + (1 - lambda_) * (time_series[i] - mean) ** 2
-        variance_lag = lambda_ * variance_lag + (1 - lambda_) * (time_series[i - lag] - mean) ** 2
-        autocorrelation = autocovariance / np.sqrt(variance * variance_lag)
+        x_t = time_series[i]
+        x_lag = time_series[i - lag]
+
+        mean = lambda_ * mean + (1 - lambda_) * x_t
+
+        autocovariance = lambda_ * autocovariance + (1 - lambda_) * (x_t - mean) * (x_lag - mean)
+        variance = lambda_ * variance + (1 - lambda_) * (x_t - mean) ** 2
+        variance_lag = lambda_ * variance_lag + (1 - lambda_) * (x_lag - mean) ** 2
+
+        autocorrelation = autocovariance / np.sqrt(variance * variance_lag + epsilon)
+
         if not last_only:
-            autocorrerlation_list.append(autocorrelation)
+            autocorrelation_list.append(autocorrelation)
 
     if not last_only:
-        return np.array(autocorrerlation_list)
+        return np.array(autocorrelation_list)
 
     return autocorrelation
 
