@@ -36,42 +36,46 @@ def transfer_weights(vanilla_lstm: torch.nn.Module, custom_lstm: torch.nn.Module
             custom_lstm.linear.bias.data.copy_(vanilla_lstm.linear.bias.data)
 
 
+def compute_ew_acf_step(x_t, x_lag, state, lambda_, epsilon=1e-8):
+    """
+    Core mathematical engine for a single EW-ACF step.
+    Works with both single values and batches.
+    """
+    # Update running stats
+    state["mean"] = lambda_ * state["mean"] + (1 - lambda_) * x_t
+    state["var"] = lambda_ * state["var"] + (1 - lambda_) * (x_t - state["mean"]) ** 2
+    state["var_lag"] = lambda_ * state["var_lag"] + (1 - lambda_) * (x_lag - state["mean"]) ** 2
+    state["cov"] = lambda_ * state["cov"] + (1 - lambda_) * (x_t - state["mean"]) * (x_lag - state["mean"])
+
+    # Calculate Correlation
+    acf = state["cov"] / torch.sqrt(state["var"] * state["var_lag"] + epsilon)
+    return acf, state
+
+
 def ew_acf(time_series, lag, lambda_=0.5, last_only=False):
     """
     Calculates the exponential weighted autocorrelation function of a time series.
-    Uses dual-variance tracking for robustness against regime shifts.
+    Maintains backward compatibility with NumPy-based analysis.
     """
     if len(time_series) <= lag:
         return np.nan
 
+    # Convert to torch for consistent precision with the loss function
+    ts = torch.tensor(time_series, dtype=torch.float32)
     epsilon = 1e-8
-    mean = 0.0
-    variance = epsilon
-    variance_lag = epsilon
-    autocovariance = 0
 
-    if not last_only:
-        autocorrelation_list = []
+    state = {"mean": torch.zeros(1), "var": torch.zeros(1) + epsilon, "var_lag": torch.zeros(1) + epsilon, "cov": torch.zeros(1)}
 
-    for i in range(lag, len(time_series)):
-        x_t = time_series[i]
-        x_lag = time_series[i - lag]
-
-        mean = lambda_ * mean + (1 - lambda_) * x_t
-
-        autocovariance = lambda_ * autocovariance + (1 - lambda_) * (x_t - mean) * (x_lag - mean)
-        variance = lambda_ * variance + (1 - lambda_) * (x_t - mean) ** 2
-        variance_lag = lambda_ * variance_lag + (1 - lambda_) * (x_lag - mean) ** 2
-
-        autocorrelation = autocovariance / np.sqrt(variance * variance_lag + epsilon)
-
+    acf_list = []
+    for i in range(lag, len(ts)):
+        acf_t, state = compute_ew_acf_step(ts[i], ts[i - lag], state, lambda_, epsilon)
         if not last_only:
-            autocorrelation_list.append(autocorrelation)
+            acf_list.append(acf_t.item())
 
-    if not last_only:
-        return np.array(autocorrelation_list)
+    if last_only:
+        return acf_t.item()
 
-    return autocorrelation
+    return np.array(acf_list)
 
 
 def std_acf(series, lag, last_only=False):
