@@ -5,13 +5,14 @@ import mlflow
 import numpy as np
 import torch
 import torch.optim as optim
+from optuna import Trial
 
+import tests.ablation_studies.model_setup  # noqa: F401 — triggers model registration
 from custom_lstm.models.registry import ModelRegistry
 from tests.ablation_studies.callbacks import MLflowCallback
 from tests.ablation_studies.config import ExperimentConfig
 from tests.ablation_studies.data_loader import load_data
 from tests.ablation_studies.factory import build_trainer
-import tests.ablation_studies.model_setup  # noqa: F401 — triggers model registration
 
 
 def seed_everything(seed: int):
@@ -23,7 +24,7 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def run_experiment(config: ExperimentConfig, patience: int = None) -> dict:
+def run_experiment(config: ExperimentConfig, optuna_trial: Trial | None = None, patience: int = None) -> dict:
     """
     Runs a single experiment within an active MLflow experiment.
     Returns dict with 'best_val_loss' and 'run_id'.
@@ -70,6 +71,7 @@ def run_experiment(config: ExperimentConfig, patience: int = None) -> dict:
             X_val=X_val,
             y_val=y_val,
             patience=patience,
+            optuna_trial=optuna_trial,
         )
 
         mlflow.log_metric("best_val_loss", best_val_loss)

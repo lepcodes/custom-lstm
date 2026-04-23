@@ -42,7 +42,10 @@ def build_experiment_config(sweep_cfg: dict, grid_combo: dict) -> ExperimentConf
     parts = [arch]
     for k, v in grid_combo.items():
         tag = tag_map.get(k, k)
-        val_str = "x".join(str(x) for x in v) if isinstance(v, list) else str(v)
+        if k == "forget_gate_layers":
+            val_str = "x".join(str(x) for x in v) if v else "std"
+        else:
+            val_str = "x".join(str(x) for x in v) if isinstance(v, list) else str(v)
         parts.append(f"{tag}{val_str}")
     run_name = "_".join(parts)
 

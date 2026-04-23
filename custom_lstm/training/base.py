@@ -1,5 +1,6 @@
 import abc
 from typing import Protocol, runtime_checkable
+from optuna import Trial
 
 import torch
 import torch.nn as nn
@@ -53,10 +54,20 @@ class BaseTrainerStrategy(abc.ABC):
 
         return val_loss
 
-    def train(self, epochs: int, X_train: torch.Tensor, y_train: torch.Tensor, X_val: torch.Tensor, y_val: torch.Tensor, patience: int = None, **kwargs):
+    def train(
+        self,
+        epochs: int,
+        X_train: torch.Tensor,
+        y_train: torch.Tensor,
+        X_val: torch.Tensor,
+        y_val: torch.Tensor,
+        optuna_trial: Trial | None = None,
+        patience: int = None,
+        **kwargs
+    ):
         """
         The Template Method that calls the training and validation epochs.
-        Supports early stopping via the patience parameter.
+        Supports early stopping via the patience parameter and Optuna pruning.
         Returns the best validation loss observed during training.
         """
         best_val_loss = float("inf")
@@ -77,6 +88,13 @@ class BaseTrainerStrategy(abc.ABC):
 
             if epoch == 1 or epoch % 10 == 0:
                 print(f"Epoch {epoch:>3}/{epochs}  |  Train MSE: {train_loss:.5f}  |  Val MSE: {val_loss:.5f}")
+
+            if optuna_trial is not None:
+                import optuna
+                optuna_trial.report(val_loss, epoch)
+                if optuna_trial.should_prune():
+                    print(f"Trial pruned at epoch {epoch}")
+                    raise optuna.exceptions.TrialPruned()
 
             if patience is not None and epochs_no_improve >= patience:
                 print(f"Early stopping at epoch {epoch} (no improvement for {patience} epochs)")
