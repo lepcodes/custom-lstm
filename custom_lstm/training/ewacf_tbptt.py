@@ -3,14 +3,13 @@ import torch.nn as nn
 
 from custom_lstm.models.base_model import AblationModel
 from custom_lstm.training.base import BaseTrainerStrategy, TrainingCallback
+from custom_lstm.utils import EWACFEngine
 
 
 class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
     """
     TBPTT Trainer Strategy for EW-ACF regularized training.
-    The criterion IS the EWACFLoss (which computes MSE + penalty internally).
-    Logs train_mse, train_penalty, and train_loss (total) separately.
-    Validates with pure MSE (penalty is a training-only regularizer).
+    The trainer strategy OWNS the EWACFEngine to compute the autocorrelation signal.
     """
 
     def __init__(
@@ -20,15 +19,19 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
         criterion: nn.Module,
         device: torch.device,
         bptt_steps: int,
+        lambda_: float = 0.5,
+        lag: int = 1,
         callback: TrainingCallback | None = None,
     ):
         super().__init__(model, optimizer, criterion, device, callback)
         self.bptt_steps = bptt_steps
+        self.acf_engine = EWACFEngine(lambda_=lambda_, lag=lag)
+        self.acf_engine.to(device)
 
     def train_epoch(self, X_train: torch.Tensor, y_train: torch.Tensor, **kwargs):
         self.model.train()
         self.model.reset_state()
-        self.criterion.reset_state()
+        self.acf_engine.reset_state()
 
         epoch_loss = 0.0
         epoch_mse = 0.0
@@ -41,13 +44,14 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
             y_batch = y_train[:, i : i + self.bptt_steps, :]
             chunk_size = X_batch.size(1)
 
+            # 1. Compute Autocorrelation Signal
+            autocorrelation = self.acf_engine(X_batch)
+
+            # 2. Forward pass
             y_pred, telemetry = self.model(X_batch)
-            total_loss, mse_val, penalty_val = self.criterion(
-                y_pred,
-                y_batch,
-                X_batch,
-                telemetry.forget_gates,
-            )
+
+            # 3. Compute Loss
+            total_loss, mse_val, penalty_val = self.criterion(y_pred, y_batch, telemetry.forget_gates, autocorrelation)
 
             if torch.isnan(total_loss):
                 print(f"NAN loss detected at batch start={i}")
@@ -69,10 +73,10 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
         }
 
     def validate_epoch(self, X_val: torch.Tensor, y_val: torch.Tensor):
-        """Validate with chunking to prevent OOM and maintain state symmetry."""
+        """Validate with chunking and ACF computation."""
         self.model.eval()
         self.model.reset_state()
-        self.criterion.reset_state()
+        self.acf_engine.reset_state()
 
         epoch_mse = 0.0
         epoch_penalty = 0.0
@@ -88,13 +92,9 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
                 y_batch = y_val[:, i : i + self.bptt_steps, :]
                 chunk_size = X_batch.size(1)
 
+                autocorrelation = self.acf_engine(X_batch)
                 y_pred, telemetry = self.model(X_batch)
-                total_loss, mse_val, penalty_val = self.criterion(
-                    y_pred,
-                    y_batch,
-                    X_batch,
-                    telemetry.forget_gates,
-                )
+                total_loss, mse_val, penalty_val = self.criterion(y_pred, y_batch, telemetry.forget_gates, autocorrelation)
 
                 epoch_mse += mse_val.item() * chunk_size
                 epoch_penalty += penalty_val.item() * chunk_size

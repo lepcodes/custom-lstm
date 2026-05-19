@@ -1,9 +1,5 @@
-import warnings
-
 import torch
 from torch import nn
-
-from custom_lstm.utils import EWACFEngine
 
 
 class EWALoss(nn.Module):
@@ -33,35 +29,26 @@ class EWALoss(nn.Module):
 
 class EWACFLoss(nn.Module):
     """
-    EW-ACF Loss with online autocorrelation computation.
-    Uses the shared mathematical engine from utils.py.
+    EW-ACF Loss that accepts precomputed autocorrelation values from a Signal Generator (e.g. Trainer Strategy).
+    Focuses purely on the aggregation and penalty logic.
     """
 
-    def __init__(self, lambda_=0.5, lag=1, alpha=0.5, threshold=0.1):
+    def __init__(self, alpha=0.5, threshold=0.1):
         super(EWACFLoss, self).__init__()
         self.mse_loss = nn.MSELoss()
         self.alpha = alpha
-        self.epsilon = 1e-8
         self.threshold = threshold
 
-        self.acf_engine = EWACFEngine(lambda_=lambda_, lag=lag, epsilon=self.epsilon)
+    def forward(self, predictions, targets, forget_gates, autocorrelation):
+        """
+        Calculates the EW-ACF penalty using a precomputed autocorrelation tensor.
 
-    @property
-    def lag(self):
-        return self.acf_engine.lag
-
-    @lag.setter
-    def lag(self, value):
-        self.acf_engine.lag = value
-
-    def enforce_min_lag(self, input_size: int):
-        if self.lag < input_size:
-            warnings.warn(f"EWACFLoss: lag={self.lag} < input_size={input_size}. Clamping lag to {input_size} to enforce non-overlapping windows.")
-            self.lag = input_size
-
-    def forward(self, predictions, targets, sequence, forget_gates):
-        autocorrelation = self.acf_engine(sequence)
-
+        Args:
+            predictions: Model output
+            targets: Ground truth
+            forget_gates: (batch, seq, hidden) forget gate activations
+            autocorrelation: (batch, seq_valid, features) precomputed ACF signal
+        """
         if autocorrelation.numel() == 0:
             mse_val = self.mse_loss(predictions, targets)
             return mse_val, mse_val, torch.zeros(1, device=predictions.device)
@@ -71,6 +58,7 @@ class EWACFLoss(nn.Module):
         active_forget_gates = forget_gates[:, -num_acf_steps:, :]
 
         irrelevance = 1 - torch.abs(autocorrelation)
+        # Average irrelevance across features to get a per-step penalty scalar per batch/unit
         irrelevance = torch.mean(irrelevance, dim=2, keepdim=True)
         active_irrelevance = torch.clamp(irrelevance - self.threshold, min=0.0)
 
@@ -80,6 +68,3 @@ class EWACFLoss(nn.Module):
         mse_val = self.mse_loss(predictions, targets)
         total_loss = mse_val + self.alpha * penalty_val
         return total_loss, mse_val, penalty_val
-
-    def reset_state(self):
-        self.acf_engine.reset_state()
