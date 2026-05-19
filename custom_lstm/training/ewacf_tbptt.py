@@ -24,7 +24,6 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
     ):
         super().__init__(model, optimizer, criterion, device, callback)
         self.bptt_steps = bptt_steps
-        self._val_mse = nn.MSELoss()
 
     def train_epoch(self, X_train: torch.Tensor, y_train: torch.Tensor, **kwargs):
         self.model.train()
@@ -44,8 +43,10 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
 
             y_pred, telemetry = self.model(X_batch)
             total_loss, mse_val, penalty_val = self.criterion(
-                y_pred, y_batch, X_batch,
-                telemetry.forget_gates, telemetry.input_gates,
+                y_pred,
+                y_batch,
+                X_batch,
+                telemetry.forget_gates,
             )
 
             if torch.isnan(total_loss):
@@ -61,15 +62,60 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
             epoch_penalty += penalty_val.item() * chunk_size
             total_samples += chunk_size
 
-        return epoch_loss / total_samples
+        return {
+            "train_loss": epoch_loss / total_samples,
+            "train_mse": epoch_mse / total_samples,
+            "train_penalty": epoch_penalty / total_samples,
+        }
 
     def validate_epoch(self, X_val: torch.Tensor, y_val: torch.Tensor):
-        """Validate with pure MSE — the penalty is a training-only regularizer."""
+        """Validate with chunking to prevent OOM and maintain state symmetry."""
         self.model.eval()
         self.model.reset_state()
+        self.criterion.reset_state()
+
+        epoch_mse = 0.0
+        epoch_penalty = 0.0
+        epoch_total = 0.0
+        epoch_fg_variance = 0.0
+
+        total_samples = 0
+        total_steps = X_val.size(1)
 
         with torch.no_grad():
-            y_pred, _ = self.model(X_val)
-            val_loss = self._val_mse(y_pred, y_val).item()
+            for i in range(0, total_steps, self.bptt_steps):
+                X_batch = X_val[:, i : i + self.bptt_steps, :]
+                y_batch = y_val[:, i : i + self.bptt_steps, :]
+                chunk_size = X_batch.size(1)
 
-        return val_loss
+                y_pred, telemetry = self.model(X_batch)
+                total_loss, mse_val, penalty_val = self.criterion(
+                    y_pred,
+                    y_batch,
+                    X_batch,
+                    telemetry.forget_gates,
+                )
+
+                epoch_mse += mse_val.item() * chunk_size
+                epoch_penalty += penalty_val.item() * chunk_size
+                epoch_total += total_loss.item() * chunk_size
+
+                # Safely accumulate the temporal variance per chunk
+                if telemetry is not None and getattr(telemetry, "forget_gates", None) is not None:
+                    chunk_variance = telemetry.forget_gates.var(dim=1).mean().item()
+                    epoch_fg_variance += chunk_variance * chunk_size
+
+                total_samples += chunk_size
+
+        metrics = {
+            "val_loss": epoch_mse / total_samples,  # Pure MSE for early stopping
+            "val_mse": epoch_mse / total_samples,
+            "val_penalty": epoch_penalty / total_samples,
+            "val_total": epoch_total / total_samples,
+        }
+
+        # Only add variance to metrics if it was calculated
+        if epoch_fg_variance > 0.0:
+            metrics["val_fg_variance"] = epoch_fg_variance / total_samples
+
+        return metrics

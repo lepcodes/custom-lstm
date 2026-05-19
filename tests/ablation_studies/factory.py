@@ -43,13 +43,12 @@ def build_trainer(
     if config.loss_type == LossType.MSE:
         criterion = nn.MSELoss()
     else:
-        routing = "broadcast" if config.loss_type == LossType.EWACF_BROADCAST else "input_gate"
+        # We only support EWACF_BROADCAST now, routing is fixed to broadcast
         criterion = EWACFLoss(
             lambda_=config.ewacf_lambda,
             lag=config.ewacf_lag,
             alpha=config.ewacf_alpha,
             threshold=config.ewacf_threshold,
-            routing_strategy=routing,
         )
         if config.data_mode == DataMode.WINDOWED:
             criterion.enforce_min_lag(config.window_size)

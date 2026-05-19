@@ -26,7 +26,6 @@ resolves as follows:
     │  2. criterion (built by build_trainer in factory.py):       │
     │     • loss_type="mse"              → nn.MSELoss()           │
     │     • loss_type="ewacf_broadcast"  → EWACFLoss(broadcast)   │
-    │     • loss_type="ewacf_input_gate" → EWACFLoss(input_gate)  │
     │     • If data_mode="win" → enforce_min_lag(window_size)     │
     └────────────────────────┬────────────────────────────────────┘
                              │
@@ -40,13 +39,11 @@ resolves as follows:
     │  Call config.describe_pipeline() to see the resolved state  │
     └─────────────────────────────────────────────────────────────┘
 
-Quick Reference — The 6-Model Phase 2 Ablation Matrix:
+Quick Reference — Phase 2 Ablation Matrix:
     P-0: architecture=lstm_custom_pure,     loss_type=mse,              trainer=tbptt
     P-1: architecture=lstm_custom_pure,     loss_type=ewacf_broadcast,  trainer=ewacf_tbptt
-    P-2: architecture=lstm_custom_pure,     loss_type=ewacf_input_gate, trainer=ewacf_tbptt
     W-0: architecture=lstm_custom_windowed, loss_type=mse,              trainer=tbptt
     W-1: architecture=lstm_custom_windowed, loss_type=ewacf_broadcast,  trainer=ewacf_tbptt
-    W-2: architecture=lstm_custom_windowed, loss_type=ewacf_input_gate, trainer=ewacf_tbptt
 """
 
 from enum import Enum
@@ -74,7 +71,6 @@ class LossType(str, Enum):
 
     MSE = "mse"
     EWACF_BROADCAST = "ewacf_broadcast"
-    EWACF_INPUT_GATE = "ewacf_input_gate"
 
 
 class TrainerStrategyType(str, Enum):

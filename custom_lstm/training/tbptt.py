@@ -52,4 +52,37 @@ class TBPTTTrainerStrategy(BaseTrainerStrategy):
             epoch_loss += loss.item() * chunk_size
             total_samples += chunk_size
 
-        return epoch_loss / total_samples
+        return {"train_loss": epoch_loss / total_samples}
+
+    def validate_epoch(self, X_val: torch.Tensor, y_val: torch.Tensor):
+        """Validate with chunking to prevent OOM and maintain state symmetry with training."""
+        self.model.eval()
+        self.model.reset_state()
+
+        epoch_loss = 0.0
+        epoch_fg_variance = 0.0
+        total_samples = 0
+        total_steps = X_val.size(1)
+
+        with torch.no_grad():
+            for i in range(0, total_steps, self.bptt_steps):
+                X_batch = X_val[:, i : i + self.bptt_steps, :]
+                y_batch = y_val[:, i : i + self.bptt_steps, :]
+                chunk_size = X_batch.size(1)
+
+                y_pred, telemetry = self.model(X_batch)
+                loss = self.criterion(y_pred, y_batch)
+
+                epoch_loss += loss.item() * chunk_size
+
+                if telemetry is not None and getattr(telemetry, "forget_gates", None) is not None:
+                    chunk_variance = telemetry.forget_gates.var(dim=1).mean().item()
+                    epoch_fg_variance += chunk_variance * chunk_size
+
+                total_samples += chunk_size
+
+        metrics = {"val_loss": epoch_loss / total_samples}
+        if epoch_fg_variance > 0.0:
+            metrics["val_fg_variance"] = epoch_fg_variance / total_samples
+
+        return metrics

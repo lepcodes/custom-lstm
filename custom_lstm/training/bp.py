@@ -27,4 +27,4 @@ class BPTrainingStrategy(BaseTrainerStrategy):
         loss.backward()
         self.optimizer.step()
 
-        return loss.item()
+        return {"train_loss": loss.item()}

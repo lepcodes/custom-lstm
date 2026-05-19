@@ -1,6 +1,10 @@
 import abc
+from typing import Optional, Tuple
 
+import torch
 import torch.nn as nn
+
+from custom_lstm.models.telemetry import GateTelemetry
 
 
 class AblationModel(nn.Module, abc.ABC):
@@ -10,7 +14,7 @@ class AblationModel(nn.Module, abc.ABC):
     """
 
     @abc.abstractmethod
-    def forward(self, sequence):
+    def forward(self, sequence: torch.Tensor) -> Tuple[torch.Tensor, Optional[GateTelemetry]]:
         """
         Forward pass of the model.
         Args:
@@ -23,7 +27,7 @@ class AblationModel(nn.Module, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def reset_state(self):
+    def reset_state(self) -> None:
         """
         Resets the internal state (e.g., hidden and cell states) of the model.
         Must be callable, even if the model (like an MLP) is stateless.
