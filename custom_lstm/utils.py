@@ -1,5 +1,69 @@
 import numpy as np
 import torch
+from torch import nn
+
+
+class EWACFEngine(nn.Module):
+    """
+    Stateful engine to compute the Exponentially Weighted Autocorrelation Function (EW-ACF).
+    Handles history management for TBPTT and maintains running statistics.
+    """
+
+    def __init__(self, lambda_=0.5, lag=1, epsilon=1e-8):
+        super(EWACFEngine, self).__init__()
+        self.lambda_ = lambda_
+        self.lag = lag
+        self.epsilon = epsilon
+
+        # State buffers for running statistics
+        self.register_buffer("mean", torch.zeros(1))
+        self.register_buffer("variance", torch.zeros(1) + self.epsilon)
+        self.register_buffer("variance_lag", torch.zeros(1) + self.epsilon)
+        self.register_buffer("covariance", torch.zeros(1))
+        self.register_buffer("input_lag", torch.zeros(0))
+
+    def forward(self, sequence):
+        """
+        Computes the ACF for a sequence.
+        Returns:
+            torch.Tensor: The autocorrelation sequence.
+        """
+        if self.input_lag.numel() == 0:
+            full_sequence = sequence
+            start_idx = self.lag
+        else:
+            full_sequence = torch.cat((self.input_lag, sequence), dim=1)
+            start_idx = self.lag
+
+        self.input_lag = full_sequence[:, -self.lag :, :].detach()
+
+        # Shared state dictionary for the core engine
+        state = {"mean": self.mean, "var": self.variance, "var_lag": self.variance_lag, "cov": self.covariance}
+
+        autocorrelation = []
+        for t in range(start_idx, full_sequence.shape[1]):
+            # compute_ew_acf_step is defined below
+            acf_t, state = compute_ew_acf_step(full_sequence[:, t, :], full_sequence[:, t - self.lag, :], state, self.lambda_, self.epsilon)
+            autocorrelation.append(acf_t)
+
+        # Update buffers back from state
+        self.mean = state["mean"]
+        self.variance = state["var"]
+        self.variance_lag = state["var_lag"]
+        self.covariance = state["cov"]
+
+        if not autocorrelation:
+            return torch.empty(sequence.shape[0], 0, sequence.shape[2], device=sequence.device)
+
+        return torch.stack(autocorrelation, dim=1)
+
+    def reset_state(self):
+        """Resets the running statistics and history."""
+        self.mean.zero_()
+        self.variance.fill_(self.epsilon)
+        self.variance_lag.fill_(self.epsilon)
+        self.covariance.zero_()
+        self.input_lag = torch.tensor([], device=self.mean.device)
 
 
 def transfer_weights(vanilla_lstm: torch.nn.Module, custom_lstm: torch.nn.Module):
@@ -94,38 +158,3 @@ def std_acf(series, lag, last_only=False):
     else:
         numerator = np.sum((series[lag:] - mean) * (series[:-lag] - mean))
         return numerator / denominator
-
-
-def generate_regime_data(n_points, sampling_rate=100, freq1=20, freq2=100, freq3=20, noise_level=0.1, random_seed=42):
-    """
-    Generates data where the duration SCALES with n_points,
-    ensuring 'dt' (time step) remains constant.
-    """
-    np.random.seed(random_seed)
-
-    duration = n_points / sampling_rate
-
-    t = np.arange(0, duration, 1 / sampling_rate)
-    t = t[:n_points]
-
-    n1 = int(n_points / 3)
-    n2 = int(n_points / 3)
-
-    t1 = t[:n1]
-    t2 = t[n1 : n1 + n2]
-    t3 = t[n1 + n2 :]
-
-    regime_1 = np.sin(2 * np.pi * freq1 * t1)
-    regime_2 = np.sin(2 * np.pi * freq2 * t2)
-    regime_3 = np.sin(2 * np.pi * freq3 * t3)
-
-    # Concatenate
-    clean_signal = np.concatenate((regime_1, regime_2, regime_3))
-
-    # Add noise
-    noise = np.random.normal(0, noise_level, clean_signal.shape)
-    noisy_signal = clean_signal + noise
-
-    data_tensor = torch.from_numpy(noisy_signal).float().reshape(-1, 1)
-
-    return data_tensor, clean_signal

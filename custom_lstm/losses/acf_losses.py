@@ -3,7 +3,7 @@ import warnings
 import torch
 from torch import nn
 
-from custom_lstm.utils import compute_ew_acf_step
+from custom_lstm.utils import EWACFEngine
 
 
 class EWALoss(nn.Module):
@@ -55,17 +55,19 @@ class EWACFLoss(nn.Module):
             raise ValueError(f"Invalid routing_strategy '{routing_strategy}'. Must be one of {self.VALID_STRATEGIES}")
         self.mse_loss = nn.MSELoss()
         self.alpha = alpha
-        self.lambda_ = lambda_
-        self.lag = lag
         self.epsilon = 1e-8
         self.threshold = threshold
         self.routing_strategy = routing_strategy
 
-        self.register_buffer("mean", torch.zeros(1))
-        self.register_buffer("variance", torch.zeros(1) + self.epsilon)
-        self.register_buffer("variance_lag", torch.zeros(1) + self.epsilon)
-        self.register_buffer("covariance", torch.zeros(1))
-        self.register_buffer("input_lag", torch.zeros(0))
+        self.acf_engine = EWACFEngine(lambda_=lambda_, lag=lag, epsilon=self.epsilon)
+
+    @property
+    def lag(self):
+        return self.acf_engine.lag
+
+    @lag.setter
+    def lag(self, value):
+        self.acf_engine.lag = value
 
     def enforce_min_lag(self, input_size: int):
         if self.lag < input_size:
@@ -73,35 +75,13 @@ class EWACFLoss(nn.Module):
             self.lag = input_size
 
     def forward(self, predictions, targets, sequence, forget_gates, input_gates=None):
-        if self.input_lag.numel() == 0:
-            full_sequence = sequence
-            start_idx = self.lag
-        else:
-            full_sequence = torch.cat((self.input_lag, sequence), dim=1)
-            start_idx = self.lag
+        autocorrelation = self.acf_engine(sequence)
 
-        self.input_lag = full_sequence[:, -self.lag :, :].detach()
-
-        # Shared state dictionary for the golden engine
-        state = {"mean": self.mean, "var": self.variance, "var_lag": self.variance_lag, "cov": self.covariance}
-
-        autocorrelation = []
-        for t in range(start_idx, full_sequence.shape[1]):
-            acf_t, state = compute_ew_acf_step(full_sequence[:, t, :], full_sequence[:, t - self.lag, :], state, self.lambda_, self.epsilon)
-            autocorrelation.append(acf_t)
-
-        # Update buffers back from state
-        self.mean = state["mean"]
-        self.variance = state["var"]
-        self.variance_lag = state["var_lag"]
-        self.covariance = state["cov"]
-
-        if not autocorrelation:
+        if autocorrelation.numel() == 0:
             mse_val = self.mse_loss(predictions, targets)
             return mse_val, mse_val, torch.zeros(1, device=predictions.device)
 
         # Align lengths: compute penalty only where acf exists
-        autocorrelation = torch.stack(autocorrelation, dim=1)
         num_acf_steps = autocorrelation.shape[1]
         active_forget_gates = forget_gates[:, -num_acf_steps:, :]
 
@@ -123,12 +103,4 @@ class EWACFLoss(nn.Module):
         return total_loss, mse_val, penalty_val
 
     def reset_state(self):
-        self.mean.zero_()
-        self.variance.fill_(self.epsilon)
-        self.variance_lag.fill_(self.epsilon)
-        self.covariance.zero_()
-        self.input_lag = torch.tensor([], device=self.mean.device)
-        self.covariance.zero_()
-        self.input_lag = torch.tensor([], device=self.mean.device)
-        self.covariance.zero_()
-        self.input_lag = torch.tensor([], device=self.mean.device)
+        self.acf_engine.reset_state()
