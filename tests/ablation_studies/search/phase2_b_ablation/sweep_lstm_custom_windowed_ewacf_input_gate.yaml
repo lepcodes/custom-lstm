@@ -1,7 +1,7 @@
 # ─── Phase 2b: Windowed + EW-ACF Input Gate Ablation ──────────────────────
 # Goal: Comparing Input Gate penalty on windowed architectures.
 
-data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\synthetic_dataset_lag.csv"
 experiment_name: "Phase 2b - Ablation"
 architecture: "lstm_custom_windowed"
 data_mode: "win"
@@ -15,12 +15,13 @@ patience: 30
 # Ablation Grid (18 runs)
 grid:
   hidden_size: [64]  # PLACEHOLDER
-  lr: [0.001]        # PLACEHOLDER
-  bptt_steps: [50]   # PLACEHOLDER
-  forget_gate_layers: [[16, 16], [32], [64, 64]]
+  lr: [0.0001]       # PLACEHOLDER
+  bptt_steps: [30]   # PLACEHOLDER
+  window_size: [15]
   
-  # Window and EW-ACF Sweep
-  window_size: [10, 20]
-  ewacf_alpha: [0.1, 0.5, 1.0]
-  ewacf_lag: [5, 10, 20]
-  ewacf_threshold: [0.01, 0.1]
+  # EW-ACF Variables Sweep
+  forget_gate_layers: [[]]
+  ewacf_alpha: [0.01, 0.1, 0.2]
+  ewacf_lambda: [0.8, 0.95, 0.99]
+  ewacf_threshold: [0.1, 0.2, 0.3]
+  ewacf_lag: [20]

@@ -1,7 +1,7 @@
 # ─── Phase 2b: Pure + EW-ACF Broadcast Ablation ────────────────────────────
 # Goal: Find optimal EW-ACF regularization for fixed architecture.
 
-data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\ethernet_traffic.csv"
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\aqua_alta.csv"
 experiment_name: "Phase 2b - Ablation"
 architecture: "lstm_custom_pure"
 data_mode: "pure"
@@ -14,12 +14,13 @@ patience: 30
 
 # Ablation Grid (18 runs)
 grid:
-  hidden_size: [64]  # PLACEHOLDER
-  lr: [0.001]        # PLACEHOLDER
+  hidden_size: [64] # PLACEHOLDER
+  lr: [0.005]        # PLACEHOLDER
   bptt_steps: [50]   # PLACEHOLDER
-  forget_gate_layers: [[16, 16], [32], [64, 64]]
   
   # EW-ACF Variables Sweep
-  ewacf_alpha: [0.1, 0.5, 1.0]
-  ewacf_lag: [1, 5, 10]
-  ewacf_threshold: [0.01, 0.1]
+  forget_gate_layers: [[]]
+  ewacf_alpha: [0.01, 0.1, 0.2]
+  ewacf_lambda: [0.85, 0.9, 0.95]
+  ewacf_threshold: [0.1, 0.3]
+  ewacf_lag: [1, 2, 3]
