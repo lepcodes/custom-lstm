@@ -107,7 +107,7 @@ Because the architecture is in flux, rigor comes from *process*, not from freezi
 | `custom_lstm/training/tbptt.py`, `bp.py` | Plain TBPTT / backprop trainers (baselines) |
 | `tests/ablation_studies/` | Experiment harness: config, sweeps (Optuna), data, metrics |
 | `compare_models.py` | Loads two MLflow runs (MSE vs EW-ACF) and plots them |
-| `dylstm.py`, `DyLSTM.ipynb` | Diego's dynamic-topology reference (different approach; context only) |
+| `reference/dylstm/dylstm.py`, `reference/dylstm/DyLSTM.ipynb` | Diego's dynamic-topology reference (different approach; context only) |
 
 **Gate telemetry is a primary scientific instrument, not debug output.** Forget-gate activations
 and their temporal variance (`val_fg_variance`) are how the thesis verifies the gate actually
