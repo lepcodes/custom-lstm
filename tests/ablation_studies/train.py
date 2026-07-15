@@ -24,11 +24,16 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def run_experiment(config: ExperimentConfig, optuna_trial: Trial | None = None, patience: int = None) -> dict:
+def run_experiment(config: ExperimentConfig, optuna_trial: Trial | None = None, patience: int = None, device: torch.device | str | None = None) -> dict:
     """
     Runs a single experiment within an active MLflow experiment.
     Returns dict with 'best_val_loss' and 'run_id'.
     """
+    # ── Set Tracking URI ───────────────────────────────────────────────────
+    # Use 4 slashes for Windows absolute paths to ensure local artifact logging
+    db_path = "C:/Users/Luis/Documents/ML-AI-Projects/custom-lstm/tests/ablation_studies/mlflow.db"
+    mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+
     run_name = config.run_name or f"{config.architecture}_{config.dataset_name}"
 
     with mlflow.start_run(run_name=run_name) as run:
@@ -54,9 +59,17 @@ def run_experiment(config: ExperimentConfig, optuna_trial: Trial | None = None, 
         n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of parameters: {n_params}")
 
-        device = torch.device("cpu")
+        if device is None:
+            device = torch.device("cuda" if not torch.cuda.is_available() else "cpu")
+        elif isinstance(device, str):
+            device = torch.device(device)
+
+        model = model.to(device)
+
         X_train, y_train = X_train.to(device), y_train.to(device)
         X_val, y_val = X_val.to(device), y_val.to(device)
+
+        print(f"Model and tensors are running on: {device}")
 
         optimizer = optim.Adam(model.parameters(), lr=config.lr)
         callback = MLflowCallback()
@@ -76,7 +89,10 @@ def run_experiment(config: ExperimentConfig, optuna_trial: Trial | None = None, 
 
         mlflow.log_metric("best_val_loss", best_val_loss)
 
-        return {"best_val_loss": best_val_loss, "run_id": run.info.run_id}
+        # Log the best model as an MLflow artifact
+        mlflow.pytorch.log_model(model, name="model")
+
+        return {"best_val_loss": best_val_loss, "run_id": run.info.run_id, "model": model, "trainer": trainer}
 
 
 def main():

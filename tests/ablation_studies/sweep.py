@@ -79,6 +79,12 @@ def main():
     parser = argparse.ArgumentParser(description="Hyperparameter Grid Search")
     parser.add_argument("--config", type=str, required=False, help="Path to sweep YAML config")
     args = parser.parse_args()
+
+    # ── Set Tracking URI ───────────────────────────────────────────────────
+    # Use 4 slashes for Windows absolute paths to ensure local artifact logging
+    db_path = "C:/Users/Luis/Documents/ML-AI-Projects/custom-lstm/tests/ablation_studies/mlflow.db"
+    mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+
     if args.config is None:
         args.config = "C:/Users/Luis/Documents/ML-AI-Projects/custom-lstm/tests/ablation_studies/search/sweep_simple_mlp.yaml"
     with open(args.config) as f:
