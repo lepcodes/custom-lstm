@@ -11,5 +11,5 @@ import mlflow
 class MLflowCallback:
     """Logs per-epoch metrics to an active MLflow run."""
 
-    def on_epoch_end(self, epoch: int, train_loss: float, val_loss: float) -> None:
-        mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss}, step=epoch)
+    def on_epoch_end(self, epoch: int, metrics: dict) -> None:
+        mlflow.log_metrics(metrics, step=epoch)
