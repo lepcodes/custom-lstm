@@ -10,10 +10,14 @@ class MLP(AblationModel):
         layers = []
         current_input_size = input_size
         for layer_size in hidden_layers:
-            layers.append(nn.Linear(current_input_size, layer_size))
-            layers.append(nn.ReLU())
+            linear_layer = nn.Linear(current_input_size, layer_size)
+            nn.init.kaiming_normal_(linear_layer.weight, nonlinearity='leaky_relu')
+            layers.append(linear_layer)
+            layers.append(nn.LeakyReLU(negative_slope=0.01))
             current_input_size = layer_size
+
         final_layer = nn.Linear(current_input_size, output_size)
+        nn.init.constant_(final_layer.bias, 1.0)
         # init.constant_(final_layer.bias, 3.0)
         layers.append(final_layer)
 

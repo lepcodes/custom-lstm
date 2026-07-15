@@ -36,8 +36,10 @@ class LSTMCellCustom(nn.Module):
 
     def reset_parameters(self):
         stdv = 1.0 / math.sqrt(self.hidden_size)
-        for weight in self.parameters():
-            weight.data.uniform_(-stdv, stdv)
+        # Filter out the MLP parameters from the uniform initialization
+        for name, param in self.named_parameters():
+            if 'forget_mlp' not in name:
+                param.data.uniform_(-stdv, stdv)
 
     def forward(self, x, hidden):
         h, c = hidden
