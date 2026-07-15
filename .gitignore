@@ -75,3 +75,8 @@ db.sqlite3-journal
 # Skills
 .agents/
 skills-lock.json
+
+# Regenerable experiment-run plots (keep CSVs/reports, exclude images that
+# churn as the metric-ruler / window-study pipelines get re-run)
+resources/metric_ruler/**/*.png
+resources/window_study/**/*.png
