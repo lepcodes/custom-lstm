@@ -44,20 +44,20 @@ def build_trainer(
         criterion = nn.MSELoss()
     else:
         # We only support EWACF_BROADCAST now, routing is fixed to broadcast
+        # Now passing aggregation_strategy for multi-lag support
         criterion = EWACFLoss(
-            lambda_=config.ewacf_lambda,
-            lag=config.ewacf_lag,
             alpha=config.ewacf_alpha,
             threshold=config.ewacf_threshold,
+            aggregation_strategy=config.ewacf_aggregation.value,
         )
-        if config.data_mode == DataMode.WINDOWED:
-            criterion.enforce_min_lag(config.window_size)
 
     # ── Build trainer strategy ─────────────────────────────────────────────
     if config.trainer_strategy == TrainerStrategyType.EWACF_TBPTT:
         return EWACFTBPTTTrainerStrategy(
             model=model, optimizer=optimizer, criterion=criterion,
-            device=device, bptt_steps=config.bptt_steps, callback=callback,
+            device=device, bptt_steps=config.bptt_steps, 
+            lambda_=config.ewacf_lambda, lags=config.ewacf_lags,
+            callback=callback,
         )
     elif config.trainer_strategy == TrainerStrategyType.TBPTT:
         return TBPTTTrainerStrategy(

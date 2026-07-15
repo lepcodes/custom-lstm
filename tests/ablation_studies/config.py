@@ -48,7 +48,7 @@ Quick Reference — Phase 2 Ablation Matrix:
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -71,6 +71,13 @@ class LossType(str, Enum):
 
     MSE = "mse"
     EWACF_BROADCAST = "ewacf_broadcast"
+
+
+class AggregationStrategy(str, Enum):
+    """How to reduce multiple lags into a single scalar."""
+
+    AVERAGE = "average"
+    MAX_POOLING = "max_pooling"
 
 
 class TrainerStrategyType(str, Enum):
@@ -143,10 +150,11 @@ class ExperimentConfig(BaseModel):
     bptt_steps: int = Field(default=50, ge=1)
 
     # ── EW-ACF Loss Configuration ─────────────────────────────────────────
-    loss_type: LossType = Field(default=LossType.MSE, description="Loss function: 'mse', 'ewacf_broadcast', or 'ewacf_input_gate'")
+    loss_type: LossType = Field(default=LossType.MSE, description="Loss function: 'mse' or 'ewacf_broadcast'")
     ewacf_alpha: float = Field(default=0.5, ge=0, description="Weight of the EW-ACF penalty term")
     ewacf_lambda: float = Field(default=0.5, ge=0, le=1, description="Exponential decay factor for running statistics")
-    ewacf_lag: int = Field(default=1, ge=1, description="Lag for autocorrelation computation")
+    ewacf_lags: List[int] = Field(default_factory=lambda: [1], description="Lags for autocorrelation computation")
+    ewacf_aggregation: AggregationStrategy = Field(default=AggregationStrategy.AVERAGE, description="Strategy to aggregate multiple lags")
     ewacf_threshold: float = Field(default=0.1, ge=0, description="Irrelevance threshold below which penalty is zero")
 
     @model_validator(mode="after")
@@ -222,12 +230,13 @@ class ExperimentConfig(BaseModel):
         """
         loss_detail = str(self.loss_type)
         if self.loss_type != LossType.MSE:
-            loss_detail += f" (α={self.ewacf_alpha}, λ={self.ewacf_lambda}, lag={self.ewacf_lag}, θ={self.ewacf_threshold})"
+            loss_detail += f" (α={self.ewacf_alpha}, λ={self.ewacf_lambda}, lags={self.ewacf_lags}, agg={self.ewacf_aggregation}, θ={self.ewacf_threshold})"
 
         lag_note = ""
         if self.loss_type != LossType.MSE and self.data_mode == DataMode.WINDOWED:
-            effective_lag = max(self.ewacf_lag, self.window_size)
-            lag_note = f"\n  Effective lag:   {effective_lag} (enforced >= window_size={self.window_size})"
+            max_lag = max(self.ewacf_lags)
+            effective_lag = max(max_lag, self.window_size)
+            lag_note = f"\n  Effective max lag: {effective_lag} (enforced >= window_size={self.window_size})"
 
         input_desc = f"window_size={self.window_size}" if self.data_mode == DataMode.WINDOWED else "1"
 

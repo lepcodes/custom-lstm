@@ -5,156 +5,165 @@ from torch import nn
 
 class EWACFEngine(nn.Module):
     """
-    Stateful engine to compute the Exponentially Weighted Autocorrelation Function (EW-ACF).
-    Handles history management for TBPTT and maintains running statistics.
+    Rigorously causal stateful engine to compute Multi-Lag EW-ACF.
+    Maintains a 'Memory Bank' of signal history and its temporal context (mean, variance).
+    Uses fully vectorized updates for maximum performance.
     """
 
-    def __init__(self, lambda_=0.5, lag=1, epsilon=1e-8):
+    def __init__(self, lambda_=0.5, lags=[1], epsilon=1e-8):
         super(EWACFEngine, self).__init__()
         self.lambda_ = lambda_
-        self.lag = lag
+        self.lags = sorted(lags)
+        self.max_lag = max(lags)
         self.epsilon = epsilon
 
-        # State buffers for running statistics
-        self.register_buffer("mean", torch.zeros(1))
-        self.register_buffer("variance", torch.zeros(1) + self.epsilon)
-        self.register_buffer("variance_lag", torch.zeros(1) + self.epsilon)
-        self.register_buffer("covariance", torch.zeros(1))
-        self.register_buffer("input_lag", torch.zeros(0))
+        # State: Cumulative statistics across the entire time series
+        self.register_buffer("mean", torch.tensor([]))
+        self.register_buffer("variance", torch.tensor([]))
+        self.register_buffer("covariance", torch.tensor([]))  # (L, B, F)
+
+        # Memory Bank: Rolling history of context for causal centering
+        self.register_buffer("x_hist", torch.tensor([]))
+        self.register_buffer("mu_hist", torch.tensor([]))
+        self.register_buffer("v_hist", torch.tensor([]))
+
+    def _lazy_init(self, B, F, device):
+        """Sizes the buffers on the first forward pass based on batch/features."""
+        L = len(self.lags)
+        if self.mean.numel() == 0:
+            self.register_buffer("mean", torch.zeros(B, F, device=device))
+            self.register_buffer("variance", torch.full((B, F), self.epsilon, device=device))
+            self.register_buffer("covariance", torch.zeros(L, B, F, device=device))
 
     def forward(self, sequence):
         """
-        Computes the ACF for a sequence.
+        Computes the ACF for all lags in parallel.
         Returns:
-            torch.Tensor: The autocorrelation sequence.
+            torch.Tensor: (batch, seq_valid, features, num_lags)
         """
-        if self.input_lag.numel() == 0:
-            full_sequence = sequence
-            start_idx = self.lag
-        else:
-            full_sequence = torch.cat((self.input_lag, sequence), dim=1)
-            start_idx = self.lag
+        B, T, F = sequence.shape
+        L = len(self.lags)
+        device = sequence.device
+        self._lazy_init(B, F, device)
 
-        self.input_lag = full_sequence[:, -self.lag :, :].detach()
+        # 1. Context Preparation: Combine saved history with current chunk
+        X = torch.cat([self.x_hist, sequence], dim=1) if self.x_hist.numel() > 0 else sequence
 
-        # Shared state dictionary for the core engine
-        state = {"mean": self.mean, "var": self.variance, "var_lag": self.variance_lag, "cov": self.covariance}
+        # Memory Bank trackers for the current combined sequence
+        MU = torch.zeros(B, X.shape[1], F, device=device)
+        V = torch.zeros(B, X.shape[1], F, device=device)
 
-        autocorrelation = []
-        for t in range(start_idx, full_sequence.shape[1]):
-            # compute_ew_acf_step is defined below
-            acf_t, state = compute_ew_acf_step(full_sequence[:, t, :], full_sequence[:, t - self.lag, :], state, self.lambda_, self.epsilon)
-            autocorrelation.append(acf_t)
+        offset = self.x_hist.shape[1] if self.x_hist.numel() > 0 else 0
+        if offset > 0:
+            MU[:, :offset, :] = self.mu_hist
+            V[:, :offset, :] = self.v_hist
 
-        # Update buffers back from state
-        self.mean = state["mean"]
-        self.variance = state["var"]
-        self.variance_lag = state["var_lag"]
-        self.covariance = state["cov"]
+        all_acf = []
+        lag_indices = torch.tensor(self.lags, device=device)
 
-        if not autocorrelation:
-            return torch.empty(sequence.shape[0], 0, sequence.shape[2], device=sequence.device)
+        # 2. Main Temporal Loop
+        for t in range(offset, X.shape[1]):
+            x_t = X[:, t, :]
 
-        return torch.stack(autocorrelation, dim=1)
+            # Update Today's context
+            self.mean = self.lambda_ * self.mean + (1 - self.lambda_) * x_t
+            self.variance = self.lambda_ * self.variance + (1 - self.lambda_) * (x_t - self.mean) ** 2
+
+            MU[:, t, :] = self.mean
+            V[:, t, :] = self.variance
+
+            # --- FULLY VECTORIZED PARALLEL LAG UPDATES ---
+            t_minus_lags = t - lag_indices
+            valid_mask = (t_minus_lags >= 0).view(L, 1, 1)  # Causal validity mask
+            safe_idx = torch.clamp(t_minus_lags, min=0)
+
+            # Retrieve "Yesterday" context from the Memory Bank for all lags
+            x_lag = X[:, safe_idx, :].permute(1, 0, 2)  # (L, B, F)
+            mu_lag = MU[:, safe_idx, :].permute(1, 0, 2)  # (L, B, F)
+
+            # Recursive Covariance Update: Centers current and historical surprises
+            # update = (Surprise_today * Surprise_yesterday)
+            update = (x_t - self.mean).unsqueeze(0) * (x_lag - mu_lag)
+
+            # Apply masked update to covariance buffer
+            self.covariance = self.lambda_ * self.covariance + (1 - self.lambda_) * torch.where(valid_mask, update, torch.zeros_like(self.covariance))
+
+            # Record Output if we reach the validity threshold (All lags valid)
+            if t >= self.max_lag:
+                v_lag = V[:, safe_idx, :].permute(1, 0, 2)  # (L, B, F)
+                # Correlation (Rho) = Cov / sqrt(Var_today * Var_yesterday)
+                rho_t = self.covariance / torch.sqrt(self.variance * v_lag + self.epsilon)
+                all_acf.append(rho_t.permute(1, 2, 0))  # (B, F, L)
+
+        # 3. Persistence: Save the tail context for the next TBPTT chunk
+        self.x_hist = X[:, -self.max_lag :, :].detach()
+        self.mu_hist = MU[:, -self.max_lag :, :].detach()
+        self.v_hist = V[:, -self.max_lag :, :].detach()
+
+        if not all_acf:
+            return torch.empty(B, 0, F, L, device=device)
+
+        return torch.stack(all_acf, dim=1)
 
     def reset_state(self):
-        """Resets the running statistics and history."""
-        self.mean.zero_()
-        self.variance.fill_(self.epsilon)
-        self.variance_lag.fill_(self.epsilon)
-        self.covariance.zero_()
-        self.input_lag = torch.tensor([], device=self.mean.device)
+        """Full reset of statistics and memory bank."""
+        if self.mean.numel() > 0:
+            self.mean.zero_()
+            self.variance.fill_(self.epsilon)
+            self.covariance.zero_()
+        self.x_hist = torch.tensor([], device=self.x_hist.device)
+        self.mu_hist = torch.tensor([], device=self.mu_hist.device)
+        self.v_hist = torch.tensor([], device=self.v_hist.device)
 
 
-def transfer_weights(vanilla_lstm: torch.nn.Module, custom_lstm: torch.nn.Module):
-    """
-    Transfer the weights from a vanilla LSTM to a custom LSTM.
-    Args:
-        vanilla_lstm (nn.Module): The vanilla LSTM to transfer the weights from.
-        custom_lstm (nn.Module): The custom LSTM to transfer the weights to.
-    """
+def transfer_weights(vanilla_lstm, custom_lstm):
     target = custom_lstm.lstm
     source = vanilla_lstm.lstm
-
     with torch.no_grad():
-        # Transfer Input Gate weights
         target.W_hi.copy_(source.W_hi.data)
         target.W_xi.copy_(source.W_xi.data)
         target.b_i.copy_(source.b_i.data)
-
-        # Skip Transfer Forget Gate weights (Different Architecture!)
-
-        # Transfer Cell Candidate weights
         target.W_hc.copy_(source.W_hc.data)
         target.W_xc.copy_(source.W_xc.data)
         target.b_c.copy_(source.b_c.data)
-
-        # Transfer Output Gate weights
         target.W_ho.copy_(source.W_ho.data)
         target.W_xo.copy_(source.W_xo.data)
         target.b_o.copy_(source.b_o.data)
-
-        # Transfer Linear Layer weights
         if hasattr(custom_lstm, "linear") and hasattr(vanilla_lstm, "linear"):
             custom_lstm.linear.weight.data.copy_(vanilla_lstm.linear.weight.data)
             custom_lstm.linear.bias.data.copy_(vanilla_lstm.linear.bias.data)
 
 
-def compute_ew_acf_step(x_t, x_lag, state, lambda_, epsilon=1e-8):
-    """
-    Core mathematical engine for a single EW-ACF step.
-    Works with both single values and batches.
-    """
-    # Update running stats
-    state["mean"] = lambda_ * state["mean"] + (1 - lambda_) * x_t
-    state["var"] = lambda_ * state["var"] + (1 - lambda_) * (x_t - state["mean"]) ** 2
-    state["var_lag"] = lambda_ * state["var_lag"] + (1 - lambda_) * (x_lag - state["mean"]) ** 2
-    state["cov"] = lambda_ * state["cov"] + (1 - lambda_) * (x_t - state["mean"]) * (x_lag - state["mean"])
-
-    # Calculate Correlation
-    acf = state["cov"] / torch.sqrt(state["var"] * state["var_lag"] + epsilon)
-    return acf, state
+def compute_ew_acf_step(x_t, x_lag, mu_t, mu_lag, var_t, var_lag, cov_prev, lambda_, epsilon=1e-8):
+    cov_new = lambda_ * cov_prev + (1 - lambda_) * (x_t - mu_t) * (x_lag - mu_lag)
+    acf = cov_new / torch.sqrt(var_t * var_lag + epsilon)
+    return acf, cov_new
 
 
 def ew_acf(time_series, lag, lambda_=0.5, last_only=False):
-    """
-    Calculates the exponential weighted autocorrelation function of a time series.
-    Maintains backward compatibility with NumPy-based analysis.
-    """
     if len(time_series) <= lag:
         return np.nan
-
-    # Convert to torch for consistent precision with the loss function
     ts = torch.tensor(time_series, dtype=torch.float32)
     epsilon = 1e-8
-
-    state = {"mean": torch.zeros(1), "var": torch.zeros(1) + epsilon, "var_lag": torch.zeros(1) + epsilon, "cov": torch.zeros(1)}
-
-    acf_list = []
-    for i in range(lag, len(ts)):
-        acf_t, state = compute_ew_acf_step(ts[i], ts[i - lag], state, lambda_, epsilon)
-        if not last_only:
+    mu, var, cov = torch.zeros(1), torch.zeros(1) + epsilon, torch.zeros(1)
+    mu_history, var_history, acf_list = [], [], []
+    for t in range(len(ts)):
+        x_t = ts[t]
+        mu = lambda_ * mu + (1 - lambda_) * x_t
+        var = lambda_ * var + (1 - lambda_) * (x_t - mu) ** 2
+        mu_history.append(mu.clone())
+        var_history.append(var.clone())
+        if t >= lag:
+            x_lag, m_lag, v_lag = ts[t - lag], mu_history[t - lag], var_history[t - lag]
+            acf_t, cov = compute_ew_acf_step(x_t, x_lag, mu, m_lag, var, v_lag, cov, lambda_, epsilon)
             acf_list.append(acf_t.item())
-
-    if last_only:
-        return acf_t.item()
-
-    return np.array(acf_list)
+    return acf_t.item() if last_only else np.array(acf_list)
 
 
 def std_acf(series, lag, last_only=False):
-    """Calculates the standardized autocorrelation function of a time series.
-    Args:
-        series (array-like): The time series to calculate the autocorrelation function of.
-        lag (int): The lag to calculate the autocorrelation at.
-    Returns:
-        float: The autocorrelation value with specified lag.
-    """
     mean = np.mean(series)
     denominator = np.sum((series - mean) ** 2)
-
     if lag == 0:
         return 1.0
-    else:
-        numerator = np.sum((series[lag:] - mean) * (series[:-lag] - mean))
-        return numerator / denominator
+    numerator = np.sum((series[lag:] - mean) * (series[:-lag] - mean))
+    return numerator / denominator

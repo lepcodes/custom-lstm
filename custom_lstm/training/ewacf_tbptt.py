@@ -20,12 +20,12 @@ class EWACFTBPTTTrainerStrategy(BaseTrainerStrategy):
         device: torch.device,
         bptt_steps: int,
         lambda_: float = 0.5,
-        lag: int = 1,
+        lags: list[int] = [1],
         callback: TrainingCallback | None = None,
     ):
         super().__init__(model, optimizer, criterion, device, callback)
         self.bptt_steps = bptt_steps
-        self.acf_engine = EWACFEngine(lambda_=lambda_, lag=lag)
+        self.acf_engine = EWACFEngine(lambda_=lambda_, lags=lags)
         self.acf_engine.to(device)
 
     def train_epoch(self, X_train: torch.Tensor, y_train: torch.Tensor, **kwargs):
