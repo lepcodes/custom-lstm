@@ -1,0 +1,57 @@
+# ─── Phase 3: Optuna Bayesian Search (Windowed + EW-ACF Input Gate) ─────────
+# Goal: Find optimal hyperparameters using TPE Sampler for Input Gate Penalty
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\etth1.csv"
+experiment_name: "Optuna_Phase3"
+architecture: "lstm_custom_windowed"
+data_mode: "win"
+loss_type: "ewacf_input_gate"
+
+# Fixed Parameters
+output_size: 1
+epochs: 200
+patience: 30
+n_trials: 60
+
+# Optuna Search Space Bounds
+search_space:
+  hidden_size:
+    type: "int"
+    low: 32
+    high: 128
+    step: 32
+  lr:
+    type: "float"
+    low: 0.0001
+    high: 0.01
+    log: true
+  bptt_steps:
+    type: "int"
+    low: 20
+    high: 100
+    step: 10
+  window_size:
+    type: "int"
+    low: 5
+    high: 50
+    step: 5
+  forget_gate_layers:
+    type: "categorical"
+    choices: [[], [128], [64, 64]]
+  ewacf_alpha:
+    type: "float"
+    low: 0.01
+    high: 0.5
+  ewacf_lambda:
+    type: "float"
+    low: 0.5
+    high: 0.95
+  ewacf_lag:
+    type: "int"
+    low: 50
+    high: 80
+  ewacf_threshold:
+    type: "float"
+    low: 0.005
+    high: 0.15
+    log: true

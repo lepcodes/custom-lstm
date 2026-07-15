@@ -1,0 +1,32 @@
+# ─── Phase 3: Optuna Bayesian Search (Vanilla LSTM Pure MSE) ────────────────
+# Goal: Find optimal hyperparameters for vanilla LSTM using TPE Sampler.
+
+data_path: "C:\\Users\\Luis\\Documents\\ML-AI-Projects\\custom-lstm\\data\\preprocessed\\etth1.csv"
+experiment_name: "Optuna_Phase3"
+architecture: "lstm_vanilla_pure"
+data_mode: "pure"
+loss_type: "mse"
+
+# Fixed Parameters
+output_size: 1
+epochs: 200
+patience: 30
+n_trials: 40
+
+# Optuna Search Space Bounds
+search_space:
+  hidden_size:
+    type: "int"
+    low: 16
+    high: 128
+    step: 16
+  lr:
+    type: "float"
+    low: 0.0001
+    high: 0.01
+    log: true  # Search in logarithmic space
+  bptt_steps:
+    type: "int"
+    low: 20
+    high: 200
+    step: 10
